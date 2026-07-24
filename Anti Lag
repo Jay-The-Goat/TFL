@@ -1,0 +1,209 @@
+-- TFL Anti-Lag Engine
+-- Maximum performance optimization, removes lag sources, high-ping optimized
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
+local LocalPlayer = Players.LocalPlayer
+
+-- TFL Theme
+local THEME = {
+	Accent = Color3.fromRGB(0, 255, 0),
+	Panel = Color3.fromRGB(10, 26, 10),
+	Background = Color3.fromRGB(0, 0, 0),
+	Text = Color3.fromRGB(0, 255, 0),
+	Muted = Color3.fromRGB(140, 180, 140),
+	On = Color3.fromRGB(0, 40, 0)
+}
+
+-- Config
+local TOGGLE_KEY = Enum.KeyCode.J
+local CHECK_INTERVAL = 0.5
+
+-- State
+local Enabled = true
+local connections = {}
+
+local function track(conn)
+	table.insert(connections, conn)
+	return conn
+end
+
+-- Cleanup
+if _G.__TFLAntiLagCleanup then
+	pcall(_G.__TFLAntiLagCleanup)
+end
+
+local function cleanup()
+	Enabled = false
+	for _, conn in ipairs(connections) do
+		if conn and conn.Connected then
+			conn:Disconnect()
+		end
+	end
+	table.clear(connections)
+	_G.TFLAntiLag = nil
+end
+
+_G.__TFLAntiLagCleanup = cleanup
+
+-- Anti-lag functions
+local function removeParticleEffects(object)
+	if not object then return end
+	
+	-- Remove particle effects
+	for _, child in ipairs(object:GetDescendants()) do
+		if child:IsA("ParticleEmitter") or child:IsA("Trail") or child:IsA("Smoke") or child:IsA("Fire") then
+			pcall(function() child.Enabled = false end)
+		elseif child:IsA("Beam") then
+			pcall(function() child.Enabled = false end)
+		elseif child:IsA("SurfaceGui") then
+			pcall(function() child.Enabled = false end)
+		end
+	end
+end
+
+local function optimizeTerrain()
+	local terrain = Workspace:FindFirstChildOfClass("Terrain")
+	if terrain then
+		pcall(function()
+			terrain.Decoration = false
+			terrain.AutoMaterial = false
+		end)
+	end
+end
+
+local function removeTextures()
+	for _, descendant in ipairs(Workspace:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			pcall(function()
+				descendant.TextureID = ""
+				descendant.Material = Enum.Material.SmoothPlastic
+			end)
+		end
+	end
+end
+
+local function optimizeLighting()
+	-- Disable expensive lighting effects
+	for _, effect in ipairs(Lighting:GetChildren()) do
+		if effect:IsA("PostEffect") or effect:IsA("BloomEffect") or effect:IsA("ColorCorrectionEffect") or effect:IsA("SunRaysEffect") or effect:IsA("BlurEffect") then
+			pcall(function() effect.Enabled = false end)
+		end
+	end
+	
+	-- Set minimal lighting
+	Lighting.GlobalShadows = false
+	Lighting.FogEnd = 999999
+	Lighting.FogStart = 999999
+	Lighting:ClearAllChildren()
+end
+
+local function optimizeCharacters()
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and player.Character then
+			removeParticleEffects(player.Character)
+		end
+	end
+end
+
+local function optimizeTools()
+	if LocalPlayer.Character then
+		for _, tool in ipairs(LocalPlayer.Character:GetChildren()) do
+			if tool:IsA("Tool") then
+				removeParticleEffects(tool)
+			end
+		end
+	end
+	
+	local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+	if backpack then
+		for _, tool in ipairs(backpack:GetChildren()) do
+			if tool:IsA("Tool") then
+				removeParticleEffects(tool)
+			end
+		end
+	end
+end
+
+-- Main optimization loop
+local function applyAntiLag()
+	if not Enabled then return end
+	
+	-- Optimize all players
+	optimizeCharacters()
+	
+	-- Optimize tools
+	optimizeTools()
+	
+	-- Optimize terrain
+	optimizeTerrain()
+	
+	-- Optimize lighting
+	optimizeLighting()
+end
+
+-- Player added/removed handlers
+track(Players.PlayerAdded:Connect(function(player)
+	if player ~= LocalPlayer then
+		player.CharacterAdded:Connect(function(character)
+			if Enabled then
+				removeParticleEffects(character)
+			end
+		end)
+	end
+end))
+
+track(Players.PlayerRemoving:Connect(function(player)
+	-- Cleanup on player leave
+end))
+
+-- Character added handler
+track(LocalPlayer.CharacterAdded:Connect(function(character)
+	-- Optimize new character
+	removeParticleEffects(character)
+end))
+
+-- Main loop
+task.spawn(function()
+	while Enabled do
+		applyAntiLag()
+		task.wait(CHECK_INTERVAL)
+	end
+end)
+
+-- Toggle
+local function setEnabled(value)
+	Enabled = value and true or false
+	
+	if Enabled then
+		applyAntiLag()
+		print("[TFLAntiLag] Enabled")
+	else
+		print("[TFLAntiLag] Disabled")
+	end
+end
+
+-- Keybind
+track(game:GetService("UserInputService").InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == TOGGLE_KEY then
+		setEnabled(not Enabled)
+	end
+end))
+
+-- API
+_G.TFLAntiLag = {
+	SetEnabled = setEnabled,
+	Apply = applyAntiLag,
+	Config = {
+		Enabled = Enabled,
+		CheckInterval = CHECK_INTERVAL
+	}
+}
+
+-- Initial application
+applyAntiLag()
+
+print("[TFLAntiLag] Engine Loaded - Maximum performance mode active")
